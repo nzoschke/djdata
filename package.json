@@ -1,0 +1,17 @@
+{
+  "name": "mid",
+  "version": "0.0.0",
+  "description": "",
+  "main": "midi.js",
+  "dependencies": {
+    "midi": "~0.7.0",
+    "libdtrace": "git+https://github.com/postwait/node-libdtrace.git#apple_special",
+    "musicmetadata": "~0.3.1"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC"
+}
