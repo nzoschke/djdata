@@ -1,39 +1,58 @@
 #!/usr/bin/env node
-console.log("midi.js start")
+console.log("djdata.js start")
 
-var libdtrace   = require('libdtrace');
-var midi        = require('midi');
-var path        = require("path");
+var fs        = require("fs");
+var libdtrace = require("libdtrace");
+var midi      = require("midi");
+var mm        = require("musicmetadata");
+var path      = require("path");
 
-var portName  = "traktor.js"
-var audioExts = [".mp3", ".wav", ".aiff", ".flac", ".ogg", ".wma", ".aac"]
+var dSrc      = 'syscall::open*:entry /execname == "Traktor"/ { @[copyinstr(arg0)] = count(); }'
+var fileExts  = [".mp3", ".wav", ".aiff", ".flac", ".ogg", ".wma", ".aac"]
+var portName  = "djdata.js"
 
-var times   = [];
-var events  = {};
+// Set up a new dtrace consumer
+var dtp = new libdtrace.Consumer();
+dtp.strcompile(dSrc);
+dtp.go();
+console.log("dtrace probe go");
+
+// every 100ms consume dtrace into shared files buffer
+var files = [];
+setInterval(function () {
+  dtp.aggwalk(function (id, key, val) {
+    files.unshift(key[0])
+    files.length = 100
+  });
+}, 100);
 
 // Set up a new midi input
 var input = new midi.input();
-input.on('message', function(deltaTime, message) {
-  console.log("midi input on message=" + message + " d=" + deltaTime)
+input.on("message", function(deltaTime, message) {
+  var channel = message[0]
+  var cc      = message[1]
+  var value   = message[2]
+
+  console.log("midi input on message=" + message + " channel=" + channel + " cc=" + cc + " value=" + value)
+
+  if (channel == 176 && value==127) { // "Deck is Loaded" channel
+    console.log("track loaded assignment=" + cc)
+
+    // wait 500ms for dtrace consumer to sychnonize,
+    // then assume latest open is loaded track
+    setTimeout(function() {
+      for (var i = 0; i < files.length; i++) {
+        var file = files[i]
+        if (fileExts.indexOf(path.extname(file)) == -1) continue;
+
+        console.log(file)
+        break;
+      }
+    }, 500)
+  }
 });
 
 console.log("midi input open name=" + portName);
 input.openVirtualPort(portName);
-
-// Set up a new dtrace consumer
-var dtp = new libdtrace.Consumer();
-var prog = 'syscall::open*:entry /execname == "Traktor"/ { @[copyinstr(arg0)] = count(); }'
-dtp.strcompile(prog);
-
-console.log("dtrace probe go");
-dtp.go();
-
-setInterval(function () {
-  dtp.aggwalk(function (id, key, val) {
-    // noop unless extension is in audioExts
-    if (audioExts.indexOf(path.extname(key)) == -1) return;
-    console.log(id, key, val)
-  });
-}, 1000);
 
 //input.closePort();
