@@ -75,9 +75,12 @@ function Session() {
     var row = this.selectLoaded(deck_id)
     if (!row) return
 
-
-    p = event.value == 127 ? "cue_in" : "cue_out"
-    this.db[row.idx][p] = event.ts || Date.now()
+    if (!row.data.fade_in) {
+      if (event.value >= 40)
+        this.db[row.idx].fade_in  = event.ts || Date.now()
+    }
+    else if (!row.data.fade_out && event.value <= 40)
+      this.db[row.idx].fade_out = event.ts || Date.now()
   }
 
   this.update = function(deck_id, event, metadata) {
@@ -120,7 +123,6 @@ assert.equal(s.selectLatest(0).data.cue_in, 1390496500000)
 s.appendCueEvent(0, { "value": 0, "ts": 1390496500001 })
 assert.equal(s.selectLatest(0).data.cue_out, 1390496500001)
 
-
 // Test play in/out update on loaded track
 s.appendPlayEvent(0, { "value": 127, "ts": 1390496500010 })
 assert.equal(s.selectLatest(0).data.play_in, 1390496500010)
@@ -128,5 +130,28 @@ s.appendPlayEvent(0, { "value": 0, "ts": 1390496500020 })
 assert.equal(s.selectLatest(0).data.play_out, 1390496500020)
 
 // Test fade in/out update on loaded track
+s.appendFadeEvent(0, { "value": 0, "ts": 1390496500100 })
+s.appendFadeEvent(0, { "value": 20, "ts": 1390496500200 })
+assert.equal(s.selectLatest(0).data.fade_in,  null)
+assert.equal(s.selectLatest(0).data.fade_out, null)
+
+s.appendFadeEvent(0, { "value": 40, "ts": 1390496500200 })
+assert.equal(s.selectLatest(0).data.fade_in, 1390496500200)   // crossed the threshold to signify fade in
+
+s.appendFadeEvent(0, { "value": 100,  "ts": 1390496500300 })
+s.appendFadeEvent(0, { "value": 127,  "ts": 1390496500400 })
+assert.equal(s.selectLatest(0).data.fade_in, 1390496500200)   // additional increases don't update
+
+s.appendFadeEvent(0, { "value": 127,  "ts": 1390496501000 })
+s.appendFadeEvent(0, { "value": 100, "ts": 1390496501100 })
+assert.equal(s.selectLatest(0).data.fade_out, null)
+
+s.appendFadeEvent(0, { "value": 40, "ts": 1390496501200 })
+assert.equal(s.selectLatest(0).data.fade_out, 1390496501200)  // crossed the threshold to signify fade out
+
+s.appendFadeEvent(0, { "value": 20, "ts": 1390496501400 })
+s.appendFadeEvent(0, { "value": 0, "ts": 1390496501500 })
+assert.equal(s.selectLatest(0).data.fade_out, 1390496501200)  // additional decrease don't update
+
 
 // TODO: Test inheriting control state from last track
