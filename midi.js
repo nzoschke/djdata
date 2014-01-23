@@ -11,6 +11,10 @@ var dSrc      = 'syscall::open*:entry /execname == "Traktor"/ { @[copyinstr(arg0
 var fileExts  = [".mp3", ".wav", ".aiff", ".flac", ".ogg", ".wma", ".aac"]
 var portName  = "djdata.js"
 
+// variables for tracking global state
+var decks = {};
+var files = [];
+
 // Set up a new dtrace consumer
 var dtp = new libdtrace.Consumer();
 dtp.strcompile(dSrc);
@@ -18,7 +22,6 @@ dtp.go();
 console.log("dtrace probe go");
 
 // every 100ms consume dtrace into shared files buffer
-var files = [];
 setInterval(function () {
   dtp.aggwalk(function (id, key, val) {
     files.unshift(key[0])
@@ -39,16 +42,20 @@ input.on("message", function(deltaTime, message) {
     console.log("track loaded assignment=" + cc)
 
     // wait 500ms for dtrace consumer to sychnonize,
-    // then assume latest open is loaded track
+    // then assume most recent open was the loaded track
     setTimeout(function() {
       for (var i = 0; i < files.length; i++) {
         var file = files[i]
         if (fileExts.indexOf(path.extname(file)) == -1) continue;
 
-        console.log(file)
+        var parser = mm(fs.createReadStream(file));
+        parser.on("metadata", function (result) {
+          console.log(result);
+        });
+
         break;
       }
-    }, 500)
+    }, 1000)
   }
 });
 
