@@ -9,7 +9,7 @@ var midi      = require("midi");
 var mm        = require("musicmetadata");
 var path      = require("path");
 
-var dSrc      = 'syscall::open*:entry /execname == "Traktor"/ { @[copyinstr(arg0)] = max(timestamp); }'
+var dSrc      = 'syscall::open*:entry /execname == "Traktor"/ { @[copyinstr(arg0)] = max(walltimestamp); }'
 var fileExts  = [".mp3", ".wav", ".aiff", ".flac", ".ogg", ".wma", ".aac"]
 var portName  = "djdata.js"
 
@@ -28,9 +28,8 @@ console.log("dtrace probe go");
 setInterval(function () {
   dtp.aggwalk(function (id, key, val) {
     if (fileExts.indexOf(path.extname(key[0])) == -1) return;
-    console.log(id, key, val)
     if (loadMessages.length > 0) {
-      emitter.emit("openAudioFile", key[0], loadMessages)
+      emitter.emit("openAudioFile", key[0], val, loadMessages)
       loadMessages = []
     }
   });
@@ -39,24 +38,29 @@ setInterval(function () {
 // Set up a new midi input
 var input = new midi.input();
 input.on("message", function(deltaTime, message) {
+  message["ts"] = Date.now() // track wall time of message
   var channel = message[0]
   var cc      = message[1]
   var value   = message[2]
 
-  console.log("midi input on message=" + message + " channel=" + channel + " cc=" + cc + " value=" + value)
+  console.log("midi input on message channel=" + channel + " cc=" + ("000" + cc).slice(-3) + " value=" + ("000" + value).slice(-3) + " ts=" + message.ts)
 
   if (channel == 176 && value==127) { // "Deck is Loaded" channel
-    console.log("track loaded assignment=" + cc)
-
-    // push the message to a global queue and wait for dtrace consumer loop to callback
+    // push message to a global synchronization queue and wait for an event
     loadMessages.push(message)
     emitter.removeAllListeners("openAudioFile")
-    emitter.once("openAudioFile", function(p, messages) {
-      console.log(p, messages)
+    emitter.once("openAudioFile", function(p, ts, messages) {
+      // check that midi message occurred very near or after open timestamp
+      var d = ts / 1000000 - message.ts
+      if (d > 200) {
+        console.log("track ignored path=" + p + " delta=" + d )
+        return false;
+      }
 
       var parser = mm(fs.createReadStream(p));
       parser.on("metadata", function (result) {
         decks[cc] = { "artist": result.artist, "title": result.title, "load_at": Date.now() }
+        console.log("track loaded assignment=" + cc + " artist=" + result.artist + " title=" + result.title  + " delta=" + d)
       });
     });
   }
